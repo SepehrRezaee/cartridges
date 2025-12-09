@@ -111,12 +111,13 @@ class TokenPatchExtractor:
         act_base = self._forward_hidden(base_ids)
         seq_len = min(act_with.size(0), act_base.size(0))
 
-        for t in range(seq_len):
-            baseline = act_base[t]
-            delta = act_with[t] - baseline
+        # Align from the end to compare the same generated tokens (assistant reply)
+        for i in range(1, seq_len + 1):
+            baseline = act_base[-i]
+            delta = act_with[-i] - baseline
             yield TokenPatch(
                 delta=delta.detach().cpu(),
                 baseline=baseline.detach().cpu(),
                 element_idx=element_idx,
-                token_idx=t,
+                token_idx=seq_len - i,
             )
