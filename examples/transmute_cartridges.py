@@ -16,6 +16,7 @@ from cartridges.transmutation.adapter import ThoughtAdapter
 from cartridges.transmutation.extractor import TokenPatchExtractor
 from cartridges.transmutation.pipeline import Transmuter, TransmutationArtifacts
 from cartridges.transmutation.solver import ThoughtPatchSolver
+from cartridges.utils import get_logger
 
 
 class CartridgeTransmutationConfig(ObjectConfig):
@@ -95,12 +96,17 @@ def save_artifacts(artifacts: TransmutationArtifacts, cfg: CartridgeTransmutatio
 
 
 def main(cfg: CartridgeTransmutationConfig) -> None:
+    logger = get_logger("transmute_cartridges")
+    logger.info(f"Loading tokenizer/model: {cfg.model_name}")
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_name or cfg.model_name)
     model = AutoModelForCausalLM.from_pretrained(cfg.model_name).to(cfg.device)
     model.eval()
 
+    logger.info(f"Building dataset from {len(cfg.data_paths)} sources")
     dataset = build_dataset(cfg, tokenizer)
+    logger.info(f"Dataset prepared with {len(dataset.elements)} elements and {len(dataset)} batches")
 
+    logger.info("Starting token patch extraction")
     extractor = TokenPatchExtractor(model=model, tokenizer=tokenizer, device=cfg.device)
     solver = ThoughtPatchSolver(lambda_scale=cfg.lambda_scale)
     transmuter = Transmuter(extractor=extractor, solver=solver)
@@ -110,6 +116,10 @@ def main(cfg: CartridgeTransmutationConfig) -> None:
         max_batches=cfg.max_batches,
         extra_metadata={"data_paths": cfg.data_paths},
     )
+    logger.info(
+        f"Extracted adapter: bias_dim={artifacts.bias_delta.shape}, "
+        f"weight_shape={artifacts.weight_delta.shape}, lambda={cfg.lambda_scale}"
+    )
     save_artifacts(artifacts, cfg)
 
     # Optional: show how to build an adapter object for reuse.
@@ -117,7 +127,7 @@ def main(cfg: CartridgeTransmutationConfig) -> None:
         bias_delta=artifacts.bias_delta,
         weight_delta=artifacts.weight_delta,
     )
-    print("[transmute-cartridges] adapter ready for application via register_thought_hook.")
+    logger.info("[transmute-cartridges] adapter ready for application via register_thought_hook.")
 
 
 if __name__ == "__main__":

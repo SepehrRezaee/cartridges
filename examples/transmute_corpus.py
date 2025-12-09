@@ -14,6 +14,7 @@ from pydrantic import ObjectConfig
 from cartridges.datasets import DataSource, TrainDataset
 from cartridges.transmutation.extractor import TokenPatchExtractor
 from cartridges.transmutation.solver import ThoughtPatchSolver
+from cartridges.utils import get_logger
 
 
 class TransmutationConfig(ObjectConfig):
@@ -56,10 +57,13 @@ def parse_args() -> TransmutationConfig:
 
 
 def main(cfg: TransmutationConfig) -> None:
+    logger = get_logger("transmute_corpus")
+    logger.info(f"Loading tokenizer/model: {cfg.model_name}")
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer_name or cfg.model_name)
     model = AutoModelForCausalLM.from_pretrained(cfg.model_name).to(cfg.device)
     model.eval()
 
+    logger.info(f"Building dataset from {cfg.data_path}")
     ds = TrainDataset(
         TrainDataset.Config(
             data_sources=[DataSource(path=cfg.data_path, type="local", limit=cfg.data_limit)],
@@ -69,12 +73,20 @@ def main(cfg: TransmutationConfig) -> None:
         tokenizer=tokenizer,
         seed=cfg.seed,
     )
+    logger.info(f"Dataset prepared with {len(ds.elements)} elements and {len(ds)} batches")
 
+    logger.info("Starting token patch extraction")
     extractor = TokenPatchExtractor(model=model, tokenizer=tokenizer, device=cfg.device)
     patches = extractor.extract(ds)
+    logger.info(f"Extracted {len(patches)} token patches")
 
+    logger.info("Solving for thought patch (weight/bias deltas)")
     solver = ThoughtPatchSolver(lambda_scale=cfg.lambda_scale)
     thought = solver.solve(patches)
+    logger.info(
+        f"Solved deltas: bias_dim={thought.bias_delta.shape}, "
+        f"weight_shape={thought.weight_delta.shape}, lambda={cfg.lambda_scale}"
+    )
 
     out_path = Path(cfg.output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +100,7 @@ def main(cfg: TransmutationConfig) -> None:
         },
         out_path,
     )
-    print(f"[transmutation] saved adapter to {out_path}")
+    logger.info(f"[transmutation] saved adapter to {out_path}")
 
 
 if __name__ == "__main__":
