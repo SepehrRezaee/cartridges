@@ -46,9 +46,14 @@ class TokenPatchExtractor:
 
     def _forward_hidden(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Run a forward pass and return last hidden state."""
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(0)
+        attention_mask = torch.ones_like(input_ids, device=self.device)
+        input_ids = input_ids.to(self.device)
         with torch.no_grad():
             outputs = self.model(
                 input_ids=input_ids,
+                attention_mask=attention_mask,
                 output_hidden_states=True,
             )
         hidden: torch.Tensor = outputs.hidden_states[-1]
